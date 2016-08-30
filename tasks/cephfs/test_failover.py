@@ -98,17 +98,14 @@ class TestStandbyReplay(CephFSTestCase):
         if replay:
             self.set_conf("mds.{0}".format(follower), "mds_standby_replay", "true")
 
-    def get_info_by_name(self, fs, mds_name):
-        if fs is None:
-            mds_info = self.mds_cluster.get_fs_map()['standbys']
+    def get_info_by_name(self, mds_name):
+        status = self.mds_cluster.status()
+        info = status.get_mds(mds_name)
+        if info is None:
+            log.warn(str(status))
+            raise RuntimeError("MDS '{0}' not found".format(mds_name))
         else:
-            mds_info = fs.get_mds_map()['info'].values()
-        for info in mds_info:
-            if info['name'] == mds_name:
-                return info
-
-        log.warn(json.dumps(mds_info, indent=2))
-        raise RuntimeError("MDS '{0}' not found".format(mds_name))
+            return info
 
     def test_standby_replay_unused(self):
         # Pick out exactly 3 daemons to be run during test
@@ -131,7 +128,7 @@ class TestStandbyReplay(CephFSTestCase):
         # Start B, he should go into standby replay
         self.mds_cluster.mds_restart(mds_b)
         self.wait_for_daemon_start([mds_b])
-        info_b = self.get_info_by_name(fs_a, mds_b)
+        info_b = self.get_info_by_name(mds_b)
         self.assertEqual(info_b['state'], "up:standby-replay")
         self.assertEqual(info_b['standby_for_name'], mds_a)
         self.assertEqual(info_b['rank'], 0)
@@ -139,7 +136,7 @@ class TestStandbyReplay(CephFSTestCase):
         # Start C, he should go into standby (*not* replay)
         self.mds_cluster.mds_restart(mds_c)
         self.wait_for_daemon_start([mds_c])
-        info_c = self.get_info_by_name(None, mds_c)
+        info_c = self.get_info_by_name(mds_c)
         self.assertEqual(info_c['state'], "up:standby")
         self.assertEqual(info_c['standby_for_name'], mds_a)
         self.assertEqual(info_c['rank'], -1)
@@ -148,10 +145,10 @@ class TestStandbyReplay(CephFSTestCase):
         self.mds_cluster.mds_stop(mds_b)
         self.mds_cluster.mds_fail(mds_b)
         self.wait_until_equal(
-                lambda: self.get_info_by_name(fs_a, mds_c)['state'],
+                lambda: self.get_info_by_name(mds_c)['state'],
                 "up:standby-replay",
                 60)
-        info_c = self.get_info_by_name(fs_a, mds_c)
+        info_c = self.get_info_by_name(mds_c)
         self.assertEqual(info_c['state'], "up:standby-replay")
         self.assertEqual(info_c['standby_for_name'], mds_a)
         self.assertEqual(info_c['rank'], 0)
@@ -182,7 +179,7 @@ class TestStandbyReplay(CephFSTestCase):
         self.wait_for_daemon_start([mds_b])
 
         # See the standby come up as the correct rank
-        info_b = self.get_info_by_name(fs_a, mds_b)
+        info_b = self.get_info_by_name(mds_b)
         self.assertEqual(info_b['state'], "up:standby-replay")
         self.assertEqual(info_b['standby_for_name'], mds_a)
         self.assertEqual(info_b['rank'], 0)
@@ -232,9 +229,9 @@ class TestStandbyReplay(CephFSTestCase):
         self.wait_for_daemon_start([mds_b_s])
         self.mds_cluster.mds_restart(mds_a_s)
         self.wait_for_daemon_start([mds_a_s])
-        info_b_s = self.get_info_by_name(fs_a, mds_b_s)
+        info_b_s = self.get_info_by_name(mds_b_s)
         self.assertEqual(info_b_s['state'], "up:standby-replay")
-        info_a_s = self.get_info_by_name(fs_a, mds_a_s)
+        info_a_s = self.get_info_by_name(mds_a_s)
         self.assertEqual(info_a_s['state'], "up:standby-replay")
 
         # Shrink the cluster

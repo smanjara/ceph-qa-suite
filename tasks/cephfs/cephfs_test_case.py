@@ -277,12 +277,7 @@ class CephFSTestCase(unittest.TestCase):
         MDS ranks or in the list of standbys
         """
         def get_daemon_names():
-            fs_map = self.mds_cluster.get_fs_map()
-            names = [m['name'] for m in fs_map['standbys']]
-            for fs in fs_map['filesystems']:
-                names.extend([info['name'] for info in fs['mdsmap']['info'].values()])
-
-            return names
+            return [info['name'] for info in self.mds_cluster.status().get_all()]
 
         if daemon_ids is None:
             daemon_ids = self.mds_cluster.mds_ids

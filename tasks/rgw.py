@@ -763,6 +763,10 @@ def configure_multisite_regions_and_zones(ctx, config, regions, role_endpoints, 
 
     fill_in_endpoints(region_info, role_zones, role_endpoints)
 
+    host, port = role_endpoints[master_client]
+    endpoint = 'http://{host}:{port}/'.format(host=host, port=port)
+    log.debug("endpoint: %s", endpoint)
+
     # clear out the old defaults
     cluster_name, daemon_type, client_id = teuthology.split_role(master_client)
     first_mon = teuthology.get_first_mon(ctx, config, cluster_name)
@@ -783,17 +787,21 @@ def configure_multisite_regions_and_zones(ctx, config, regions, role_endpoints, 
              cmd=['realm', 'create', '--rgw-realm', realm, '--default', '--cluster', cluster_name],
              check_status=True)
 
-    for region, info in region_info.iteritems():
-        region_json = json.dumps(info)
-        log.debug('region info is: %s', region_json)
-        rgwadmin(ctx, master_client,
-                 cmd=['zonegroup', 'set', '--cluster', cluster_name],
-                 stdin=StringIO(region_json),
-                 check_status=True)
-
     rgwadmin(ctx, master_client,
-             cmd=['zonegroup', 'default', '--rgw-zonegroup', master_zonegroup, '--cluster', cluster_name],
-             check_status=True)
+             cmd=['zonegroup', 'create', '--rgw-zonegroup', master_zonegroup, '--master', '--endpoints', endpoint,
+                  '--default', '--cluster', cluster_name])
+
+#    for region, info in region_info.iteritems():
+#        region_json = json.dumps(info)
+#        log.debug('region info is: %s', region_json)
+#        rgwadmin(ctx, master_client,
+#                 cmd=['zonegroup', 'set', '--cluster', cluster_name],
+#                 stdin=StringIO(region_json),
+#                 check_status=True)
+
+#    rgwadmin(ctx, master_client,
+#             cmd=['zonegroup', 'default', '--rgw-zonegroup', master_zonegroup, '--cluster', cluster_name],
+#             check_status=True)
 
     for role, (zonegroup, zone, zone_info, user_info) in role_zones.iteritems():
         (remote,) = ctx.cluster.only(role).remotes.keys()
@@ -810,14 +818,15 @@ def configure_multisite_regions_and_zones(ctx, config, regions, role_endpoints, 
     zone_json = json.dumps(dict(zone_info.items() + user_info.items()))
     log.debug("zone info is: %r", zone_json)
     rgwadmin(ctx, master_client,
-             cmd=['zone', 'set', '--rgw-zonegroup', zonegroup,
-                  '--rgw-zone', zone, '--master', '--cluster', cluster_name],
-             stdin=StringIO(zone_json),
+             cmd=['zone', 'create', '--rgw-zonegroup', zonegroup,
+                  '--rgw-zone', zone, '--endpoints', endpoint, '--access-key',
+                  user_info['system_key']['access_key'], '--secret',
+                  user_info['system_key']['secret_key'], '--master', '--default', '--cluster', cluster_name],
              check_status=True)
 
-    rgwadmin(ctx, master_client,
-             cmd=['zone', 'default', '--rgw-zone', zone, '--cluster', cluster_name],
-             check_status=True)
+#    rgwadmin(ctx, master_client,
+#             cmd=['zone', 'default', '--rgw-zone', zone, '--cluster', cluster_name],
+#             check_status=True)
 
     rgwadmin(ctx, master_client,
              cmd=['period', 'update', '--commit', '--cluster', cluster_name],
@@ -1023,9 +1032,10 @@ def pull_configuration(ctx, config, regions, role_endpoints, realm, master_clien
             host, port = role_endpoints[master_client]
             endpoint = 'http://{host}:{port}/'.format(host=host, port=port)
             log.debug("endpoint: %s", endpoint)
+
             rgwadmin(ctx, client,
                 cmd=['realm', 'pull', '--rgw-realm', realm, '--default', '--url',
-                     endpoint, '--access_key',
+                     endpoint, '--access-key',
                      user_info['system_key']['access_key'], '--secret',
                      user_info['system_key']['secret_key'], '--cluster', cluster_name],
                      check_status=True)
@@ -1034,33 +1044,32 @@ def pull_configuration(ctx, config, regions, role_endpoints, realm, master_clien
             zone_json = json.dumps(dict(zone_info.items() + zone_user_info.items()))
 
             log.debug("zone info is: %r", zone_json)
+
+            (master_zonegroup, master_zone, zone_info, master_zone_user_info) = role_zones[master_client]
+
+            host, port = role_endpoints[client]
+            endpoint = 'http://{host}:{port}/'.format(host=host, port=port)
+            log.debug("endpoint: %s", endpoint)
+
             rgwadmin(ctx, client,
-                     cmd=['zone', 'set', '--default',
-                          '--rgw-zone', zone, '--cluster', cluster_name],
-                     stdin=StringIO(zone_json),
+                     cmd=['zone', 'create', '--rgw-zonegroup', master_zonegroup, '--rgw-zone', zone, '--endpoints',
+                          endpoint, '--default', '--access-key', user_info['system_key']['access_key'],
+                          '--secret',  user_info['system_key']['secret_key'], '--cluster', cluster_name],
                      check_status=True)
-
-            (zonegroup, zone, zone_info,zone_user_info) = role_zones[master_client]
-            master_zonegroup = zonegroup
-            master_zone = zone
-
 #           zone_json = json.dumps(dict(zone_info.items() + zone_user_info.items()))
 
-
-            rgwadmin(ctx, client,
-                     cmd=['zonegroup', 'add', '--rgw-zonegroup', master_zonegroup, '--rgw-zone', zone, '--cluster',
-                          cluster_name],
-                     check_status=True)
+#            rgwadmin(ctx, client,
+#                     cmd=['zonegroup', 'add', '--rgw-zonegroup', master_zonegroup, '--rgw-zone', zone, '--cluster',
+#                          cluster_name],
+#                     check_status=True)
 
             rgwadmin(ctx, client,
                      cmd=['zonegroup', 'default', '--rgw-zonegroup', master_zonegroup, '--cluster', cluster_name],
                      check_status=True)
 
             rgwadmin(ctx, client,
-                     cmd=['period', 'update', '--commit', '--url',
-                          endpoint, '--access_key',
-                          user_info['system_key']['access_key'], '--secret',
-                          user_info['system_key']['secret_key'], '--cluster', cluster_name],
+                     cmd=['period', 'update', '--commit',
+                          '--cluster', cluster_name, '--debug-rgw=20'],
                      check_status=True)
 
     yield
@@ -1326,7 +1335,7 @@ def task(ctx, config):
                 ctx=ctx,
                 config=config,
                 client=master_client,
-                everywhere=False,
+                everywhere=True,
             ),
         ])
 
@@ -1358,14 +1367,14 @@ def task(ctx, config):
             ),
         ])
 
-        subtasks.extend([
-            lambda: configure_users_for_client(
-                ctx=ctx,
-                config=config,
-                client=master_client,
-                everywhere=True
-            ),
-        ])
+#        subtasks.extend([
+#            lambda: configure_users_for_client(
+#                ctx=ctx,
+#                config=config,
+#                client=master_client,
+#                everywhere=True
+#            ),
+#        ])
 
         if ctx.rgw.frontend == 'apache':
             subtasks.insert(0,

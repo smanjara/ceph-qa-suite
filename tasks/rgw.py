@@ -1335,7 +1335,7 @@ def task(ctx, config):
                 ctx=ctx,
                 config=config,
                 client=master_client,
-                everywhere=False,
+                everywhere=True,
             ),
         ])
 

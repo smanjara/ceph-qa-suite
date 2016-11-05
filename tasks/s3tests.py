@@ -427,7 +427,7 @@ def task(ctx, config):
             infile={
                 'DEFAULT':
                     {
-                    'port'      : 7280,
+                    'port'      : 7281,
                     'is_secure' : 'no',
                     },
                 'fixtures' : {},

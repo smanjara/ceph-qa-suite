@@ -888,6 +888,9 @@ class CephManager:
     """
     Ceph manager object.
     Contains several local functions that form a bulk of this module.
+
+    Note: this class has nothing to do with the Ceph daemon (ceph-mgr) of
+    the same name.
     """
 
     REPLICATED_POOL = 1
@@ -1963,7 +1966,8 @@ class CephManager:
         Stop osd if nothing else works.
         """
         self.raw_cluster_cmd('--', 'tell', 'osd.%d' % osd,
-                             'injectargs', '--filestore-blackhole')
+                             'injectargs',
+                             '--objectstore-blackhole')
         time.sleep(2)
         self.ctx.daemons.get_daemon('osd', osd, self.cluster).stop()
 
